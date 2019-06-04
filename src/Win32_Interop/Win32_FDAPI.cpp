@@ -25,6 +25,7 @@
 #include "Win32_FDAPI.h"
 #include "win32_rfdmap.h"
 #include <exception>
+#include <system_error>
 #include <mswsock.h>
 #include <sys/stat.h>
 #include "Win32_fdapi_crt.h"
