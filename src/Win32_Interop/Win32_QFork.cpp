@@ -112,7 +112,13 @@ allocate a system paging file that will expand up to about (3.5 * physical).
   #include <jemalloc/jemalloc.h>
 #endif
 
+#include <atomic>
+#include <mutex>
+
 using namespace std;
+
+static bool g_isRedisInitialized = false;
+static mutex g_isRedisInitializedLock;
 
 //#define DEBUG_WITH_PROCMON
 #ifdef DEBUG_WITH_PROCMON
@@ -1132,7 +1138,11 @@ BOOL IsPersistenceDisabled() {
     if (g_argMap.find(cPersistenceAvailable) != g_argMap.end()) {
         return (g_argMap[cPersistenceAvailable].at(0).at(0) == cNo);
     } else {
+#if REDISSERVERDLL_EXPORTS
+        return TRUE;
+#else
         return FALSE;
+#endif
     }
 }
 
@@ -1157,6 +1167,8 @@ void SetupQForkGlobals(int argc, char* argv[]) {
 
 extern "C"
 {
+#ifndef REDISSERVERDLL_EXPORTS
+
     // The external main() is redefined as redis_main() by Win32_QFork.h.
     // The CRT will call this replacement main() before the previous main()
     // is invoked so that the QFork allocator can be setup prior to anything 
@@ -1267,4 +1279,162 @@ extern "C"
             redisLog(REDIS_WARNING, "main: other exception caught.\n");
         }
     }
+
+#endif
 }
+
+#if REDISSERVERDLL_EXPORTS
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
+{
+    switch(ul_reason_for_call)
+    {
+    case DLL_PROCESS_ATTACH:
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+        break;
+    }
+
+    return TRUE;
+}
+
+extern "C" __declspec(dllexport) int RunRedis(int argc, char **argv, void* state, BOOL(*isRunning)(void*))
+{
+    {
+        lock_guard<mutex> guard(g_isRedisInitializedLock);
+
+        if(!g_isRedisInitialized)
+        {
+            try
+            {
+                InitTimeFunctions();
+                ParseCommandLineArguments(argc, argv);
+                SetupQForkGlobals(argc, argv);
+                SetupLogging();
+                StackTraceInit();
+                InitThreadControl();
+            }
+            catch(system_error syserr)
+            {
+                string errMsg = string("System error during startup: ") + syserr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(runtime_error runerr)
+            {
+                string errMsg = string("System error during startup: ") + runerr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(invalid_argument &iaerr)
+            {
+                string errMsg = string("Invalid argument during startup: ") + iaerr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(exception othererr)
+            {
+                string errMsg = string("An exception occurred during startup: ") + othererr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+
+#ifdef USE_DLMALLOC
+            DLMallocInit();
+            // Setup memory allocation scheme
+            if(g_UseSystemHeap == FALSE) {
+                g_malloc = dlmalloc;
+                g_calloc = dlcalloc;
+                g_realloc = dlrealloc;
+                g_free = dlfree;
+                g_msize = reinterpret_cast<size_t(*)(void *)>(dlmalloc_usable_size);
+            }
+            else {
+                g_malloc = malloc;
+                g_calloc = calloc;
+                g_realloc = realloc;
+                g_free = free;
+                g_msize = _msize;
+            }
+#elif USE_JEMALLOC
+            je_init();
+#endif
+
+            g_isRedisInitialized = true;
+        }
+        else
+        {
+            try
+            {
+                ParseCommandLineArguments(argc, argv);
+                SetupLogging();
+            }
+            catch(system_error syserr)
+            {
+                string errMsg = string("System error during startup: ") + syserr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(runtime_error runerr)
+            {
+                string errMsg = string("System error during startup: ") + runerr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(invalid_argument &iaerr)
+            {
+                string errMsg = string("Invalid argument during startup: ") + iaerr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+            catch(exception othererr)
+            {
+                string errMsg = string("An exception occurred during startup: ") + othererr.what();
+                RedisEventLog().LogError(errMsg);
+                cout << errMsg << endl;
+
+                return -1;
+            }
+        }
+    }
+
+    return redis_main(argc, argv, state, isRunning);
+}
+
+extern "C" __declspec(dllexport) void RedisInitialize()
+{
+    lock_guard<mutex> guard(g_isRedisInitializedLock);
+
+    if(!g_isRedisInitialized)
+    {
+        const char *argv = "";
+
+        InitTimeFunctions();
+        SetupQForkGlobals(0, const_cast<char**>(&argv));
+        StackTraceInit();
+        InitThreadControl();
+
+#if USE_JEMALLOC
+        je_init();
+#endif
+
+        g_isRedisInitialized = true;
+    }
+}
+
+#endif

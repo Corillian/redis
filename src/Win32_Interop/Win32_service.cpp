@@ -454,7 +454,7 @@ DWORD WINAPI ServiceWorkerThread(LPVOID lpParam) {
             throw std::runtime_error("new() failed");
 
         int argIndex = 0;
-        for each(string arg in serviceRunArguments) {
+        for(auto arg : serviceRunArguments) {
             argv[argIndex] = new char[arg.length() + 1];
             if (argv[argIndex] == nullptr)
                 throw std::runtime_error("new() failed");

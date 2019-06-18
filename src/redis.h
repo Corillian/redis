@@ -1583,7 +1583,7 @@ void _redisPanic(char *msg, char *file, int line);
 void bugReportStart(void);
 void redisLogObjectDebugInfo(robj *o);
 POSIX_ONLY(void sigsegvHandler(int sig, siginfo_t *info, void *secret);)
-sds genRedisInfoString(char *section);
+sds genRedisInfoString(const char *section);
 void enableWatchdog(int period);
 void disableWatchdog(void);
 void watchdogScheduleSignal(int period);

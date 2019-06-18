@@ -102,6 +102,9 @@ int redis_main(int argc, char** argv);
 #else
 #define main redis_main
 #endif
+#elif defined(REDISSERVERDLL_EXPORTS)
+
+int redis_main(int argc, char** argv, void *state, BOOL (*isRunning)(void*));
 #endif
 
 #ifdef __cplusplus

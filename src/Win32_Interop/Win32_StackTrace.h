@@ -28,5 +28,5 @@
 void StackTraceInit(void);
 
 extern "C" typedef char *sds;
-extern "C" sds genRedisInfoString(char *section);
+extern "C" sds genRedisInfoString(const char *section);
 extern "C" void bugReportStart(void);
